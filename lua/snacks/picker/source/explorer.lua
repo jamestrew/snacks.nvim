@@ -43,8 +43,17 @@ function State.new(picker)
 
   local buf = vim.api.nvim_win_get_buf(picker.main)
   local buf_file = svim.fs.normalize(vim.api.nvim_buf_get_name(buf))
-  if uv.fs_stat(buf_file) then
-    Tree:open(buf_file)
+  if opts.follow_buffer then
+    if uv.fs_stat(buf_file) then
+      local p = ref()
+      if p then
+        self.on_find = function()
+          if p and not p.closed then
+            Actions.update(p, { target = buf_file })
+          end
+        end
+      end
+    end
   end
 
   if opts.watch then
@@ -171,6 +180,46 @@ function M.setup(opts)
         end
       end,
     },
+    matcher = {
+      -- --- Add parent dirs to matching items
+      -- ---@param matcher snacks.picker.Matcher
+      -- ---@param item snacks.picker.explorer.Item
+      -- on_match = function(matcher, item)
+      --   if not searching then
+      --     return
+      --   end
+      --   local picker = ref.value
+      --   if picker and item.score > 0 then
+      --     local parent = item.parent
+      --     while parent do
+      --       if parent.score == 0 or parent.match_tick ~= matcher.tick then
+      --         parent.score = 1
+      --         parent.match_tick = matcher.tick
+      --         parent.match_topk = nil
+      --         picker.list:add(parent)
+      --       else
+      --         break
+      --       end
+      --       parent = parent.parent
+      --     end
+      --   end
+      -- end,
+      -- on_done = function()
+      --   if not searching then
+      --     return
+      --   end
+      --   local picker = ref.value
+      --   if not picker or picker.closed then
+      --     return
+      --   end
+      --   for item, idx in picker:iter() do
+      --     if not item.dir then
+      --       picker.list:view(idx)
+      --       return
+      --     end
+      --   end
+      -- end,
+    },
     formatters = {
       file = {
         filename_only = opts.tree,
@@ -269,6 +318,8 @@ function M.search(opts, ctx)
     "d", -- include directories
     "--path-separator", -- same everywhere
     "/",
+    "--maxdepth",
+    "1",
   }
   opts.dirs = { ctx.filter.cwd }
   ctx.picker.list:set_target()

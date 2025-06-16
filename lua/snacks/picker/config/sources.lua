@@ -37,6 +37,7 @@ M.buffers = {
 }
 
 ---@class snacks.picker.explorer.Config: snacks.picker.files.Config|{}
+---@field select_buffer? boolean follow the file from the current buffer
 ---@field follow_file? boolean follow the file from the current buffer
 ---@field tree? boolean show the file tree (default: true)
 ---@field git_status? boolean show git status (default: true)

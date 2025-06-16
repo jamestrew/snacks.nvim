@@ -97,7 +97,7 @@ function M.update(picker, opts)
   -- when searching, restore explorer view first
   if picker.input.filter.meta.searching then
     picker.input:set("", "")
-    picker.list.win:focus()
+    -- picker.list.win:focus()
     refresh = true
   end
 
@@ -114,6 +114,18 @@ function M.update(picker, opts)
       end
     end,
   })
+end
+
+local function change_cwd(picker, dir)
+  if not dir or dir == "" then
+    return Snacks.notify.warn("No directory specified")
+  end
+  if vim.fn.isdirectory(dir) ~= 1 then
+    return Snacks.notify.error("Not a directory:\n- `" .. dir .. "`")
+  end
+  picker.input:set("", "")
+  picker:set_cwd(dir)
+  picker:find()
 end
 
 ---@class snacks.explorer.actions
@@ -148,9 +160,21 @@ function M.actions.explorer_yank(picker)
   Snacks.notify.info("Yanked " .. #files .. " files")
 end
 
+--- smart backspace action
 function M.actions.explorer_up(picker)
-  picker:set_cwd(vim.fs.dirname(picker:cwd()))
-  picker:find()
+  local prompt = picker.input:get()
+  if prompt ~= "" then
+    prompt = prompt:sub(1, -2) -- remove last character
+    return picker.input:set(prompt, "")
+  end
+  local cwd = picker:cwd()
+  Tree:close_all(cwd)
+  picker:set_cwd(vim.fs.dirname(cwd))
+  picker:find({
+    on_done = function()
+      M.reveal(picker, cwd)
+    end,
+  })
 end
 
 function M.actions.explorer_close(picker, item)
@@ -205,6 +229,28 @@ function M.actions.explorer_git_prev(picker, item)
   end
 end
 
+---@param picker snacks.Picker
+---@param name string
+local function create(picker, name)
+  local path = svim.fs.normalize(picker:dir() .. "/" .. name)
+  local is_file = name:sub(-1) ~= "/"
+  local dir = is_file and vim.fs.dirname(path) or path
+  if is_file and uv.fs_stat(path) then
+    Snacks.notify.warn("File already exists:\n- `" .. path .. "`")
+    return
+  end
+  vim.fn.mkdir(dir, "p")
+  if is_file then
+    io.open(path, "w"):close()
+  end
+  change_cwd(picker, dir)
+  picker:find({
+    on_done = function()
+      M.reveal(picker, path)
+    end,
+  })
+end
+
 function M.actions.explorer_add(picker)
   Snacks.input({
     prompt = 'Add a new file or directory (directories end with a "/")',
@@ -212,20 +258,7 @@ function M.actions.explorer_add(picker)
     if not value or value:find("^%s$") then
       return
     end
-    local path = svim.fs.normalize(picker:dir() .. "/" .. value)
-    local is_file = value:sub(-1) ~= "/"
-    local dir = is_file and vim.fs.dirname(path) or path
-    if is_file and uv.fs_stat(path) then
-      Snacks.notify.warn("File already exists:\n- `" .. path .. "`")
-      return
-    end
-    vim.fn.mkdir(dir, "p")
-    if is_file then
-      io.open(path, "w"):close()
-    end
-    Tree:open(dir)
-    Tree:refresh(dir)
-    M.update(picker, { target = path })
+    create(picker, value)
   end)
 end
 
@@ -324,12 +357,13 @@ end
 
 function M.actions.confirm(picker, item, action)
   if not item then
+    local prompt = picker.input:get()
+    if prompt then
+      create(picker, prompt)
+    end
     return
-  elseif picker.input.filter.meta.searching then
-    M.update(picker, { target = item.file })
   elseif item.dir then
-    Tree:toggle(item.file)
-    M.update(picker, { refresh = true })
+    change_cwd(picker, item.file)
   else
     Snacks.picker.actions.jump(picker, item, action)
   end
